@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -9,9 +10,12 @@ import pytest
 
 from app.channels.base import InboundMessage
 from app.journal import Journal
+from app.parsers.common import MISSING
 from app.router import Router
 from app.skills.base import Registry, SkillResult
 from app.skills.huckleberry.bottle import BottleSkill
+from app.skills.huckleberry.diaper import DiaperSkill
+from app.skills.huckleberry.sleep import SleepSkill
 
 TZ = ZoneInfo("America/New_York")
 ALICE = "447700900123"
@@ -227,3 +231,132 @@ async def test_journal_records_sender_for_attribution():
     await router.handle(msg("90ml formula", sender=BOB))
     rows = await journal.recent()
     assert rows[0]["sender"] == BOB
+
+
+# ---- sleep: the clarify loop must not lose a known start time ---------------
+
+class FakeSleepSkill(SleepSkill):
+    """Real parsing/clarify from SleepSkill; execute is faked so no network is touched."""
+
+    def __init__(self) -> None:
+        super().__init__(client=None, tz=TZ)
+        self.calls: list[dict[str, Any]] = []
+
+    async def execute(self, args: dict[str, Any]) -> SkillResult:
+        self.calls.append(args)
+        return SkillResult(ok=True, message="Sleep started.", verified=True)
+
+
+def make_sleep():
+    journal = Journal(":memory:")
+    channel = FakeChannel()
+    skill = FakeSleepSkill()
+    registry = Registry()
+    registry.register(skill)
+    router = Router(registry=registry, journal=journal, channel=channel, tz=TZ)
+    return router, channel, skill, journal
+
+
+async def test_backdated_start_never_reaches_the_clarify_loop():
+    router, channel, skill, _ = make_sleep()
+    await router.handle(msg("Sleep start 5:40 am"))
+
+    assert len(skill.calls) == 1
+    args = skill.calls[0]
+    assert args["action"] == "start"
+    assert (args["start_time"].hour, args["start_time"].minute) == (5, 40)
+    assert "end" not in channel.sent[0][1].lower()
+
+
+async def test_still_sleeping_reply_keeps_the_pending_start_time():
+    """Regression: 'She is still sleeping' answering 'when did it end?' opened a fresh
+    timer at the time of the reply and dropped the 5:40 the user had already given."""
+    router, _, skill, journal = make_sleep()
+    started = datetime.now(TZ).replace(hour=5, minute=40, second=0, microsecond=0)
+    await journal.set_pending(
+        ALICE,
+        "huckleberry_sleep",
+        {"action": "log", "start_time": started, "end_time": MISSING},
+        "When did it end? e.g. `4pm`, or say `still asleep`",
+    )
+
+    await router.handle(msg("She is still sleeping"))
+
+    assert len(skill.calls) == 1
+    args = skill.calls[0]
+    assert args["action"] == "start"
+    assert (args["start_time"].hour, args["start_time"].minute) == (5, 40)
+    assert await journal.get_pending(ALICE) is None
+
+
+# ---- diaper ----------------------------------------------------------------
+
+class FakeDiaperSkill(DiaperSkill):
+    """Real parsing/clarify from DiaperSkill; execute is faked so no network is touched."""
+
+    def __init__(self) -> None:
+        super().__init__(client=None)
+        self.calls: list[dict[str, Any]] = []
+
+    async def execute(self, args: dict[str, Any]) -> SkillResult:
+        self.calls.append(args)
+        return SkillResult(ok=True, message="Nappy logged.", verified=True)
+
+
+def make_diaper():
+    journal = Journal(":memory:")
+    channel = FakeChannel()
+    skill = FakeDiaperSkill()
+    registry = Registry()
+    registry.register(skill)
+    router = Router(registry=registry, journal=journal, channel=channel, tz=TZ)
+    return router, channel, skill, journal
+
+
+async def test_diaper_intensity_synonym_reaches_the_skill():
+    router, _, skill, _ = make_diaper()
+    await router.handle(msg("Diaper pee heavy at 6:30 pm"))
+
+    args = skill.calls[0]
+    assert args["mode"] == "pee"
+    assert args["pee_amount"] == "big"
+    assert (args["start_time"].hour, args["start_time"].minute) == (18, 30)
+
+
+async def test_diaper_amount_survives_the_clarifying_question():
+    """Regression: '5:10 am diaper medium' -> 'Pee' logged the pee and dropped the medium.
+
+    Goes through the real journal, so the scratch keys have to survive the JSON round-trip.
+    """
+    router, channel, skill, journal = make_diaper()
+    await router.handle(msg("5:10 am diaper medium"))
+
+    assert skill.calls == []
+    assert "pee, poo" in channel.sent[0][1]
+
+    await router.handle(msg("Pee", mid="wamid.2"))
+
+    assert len(skill.calls) == 1
+    args = skill.calls[0]
+    assert args["mode"] == "pee"
+    assert args["pee_amount"] == "medium"
+    assert (args["start_time"].hour, args["start_time"].minute) == (5, 10)
+    assert await journal.get_pending(ALICE) is None
+
+
+async def test_diaper_mixed_nappy_asks_which_amount_then_logs():
+    router, channel, skill, journal = make_diaper()
+    await router.handle(msg("big nappy, poo and wee"))
+
+    assert skill.calls == []
+    assert "pee or the poo" in channel.sent[0][1]
+
+    await router.handle(msg("poo", mid="wamid.2"))
+
+    args = skill.calls[0]
+    assert args["mode"] == "both"
+    assert args["poo_amount"] == "big"
+    assert args["pee_amount"] is None
+    assert "amount_hint" not in args and "amount_target" not in args
+    assert "source_text" not in args
+    assert await journal.get_pending(ALICE) is None

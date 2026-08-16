@@ -22,6 +22,7 @@ HELP = (
     "Bottles:   11am 90ml breast milk · 90ml formula\n"
     "Nappies:   poo nappy · wet at 2pm · big green poo\n"
     "Sleep:     down now · awake · slept 2pm to 4pm\n"
+    "           sleep start 5:40am · awake at 7:30  (either end can be backdated)\n"
     "Nursing:   feeding now left · finished nursing\n"
     "Pump:      pumped 120ml · expressed 3oz left\n"
     "Growth:    weight 5.2kg · 55cm 5.1kg\n\n"
@@ -30,8 +31,10 @@ HELP = (
     "Note: entries can't be deleted from here — use the Huckleberry app for that."
 )
 
-# Display-only keys a skill may attach for its own confirmation copy; never sent to execute.
-_INTERNAL_KEYS = {"time_was_explicit"}
+# Scratch keys a skill may attach for its own confirmation copy or to carry state across a
+# clarifying question; never sent to execute. Names are skill-scoped enough not to collide
+# with a real field (bottle's "amount" stays put).
+_INTERNAL_KEYS = {"time_was_explicit", "source_text", "amount_hint", "amount_target"}
 
 
 class Router:
