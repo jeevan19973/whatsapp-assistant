@@ -1,0 +1,14 @@
+# Never bake secrets, local state, or dev cruft into the image.
+.env
+*.db
+*.db-wal
+*.db-shm
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.git/
+.gitignore
+spike.log
+deploy/
+*.md

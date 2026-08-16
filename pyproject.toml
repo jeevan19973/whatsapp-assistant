@@ -1,0 +1,29 @@
+[project]
+name = "whatsapp-assistant"
+version = "0.1.0"
+description = "WhatsApp personal assistant bot that logs entries to Huckleberry and future skills"
+requires-python = ">=3.14"
+dependencies = [
+    "huckleberry-api>=0.1.0",
+    "aiohttp>=3.10.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.6.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+# Only needed when LLM_PROVIDER=anthropic; NVIDIA uses aiohttp (already a core dep).
+anthropic = ["anthropic>=0.40.0"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "httpx",           # required by fastapi.testclient
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["."]

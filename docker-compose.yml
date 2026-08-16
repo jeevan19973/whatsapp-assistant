@@ -1,0 +1,46 @@
+# Zero-cost always-on stack for an Oracle "Always Free" VM.
+#
+#   app     — the FastAPI bot (Dockerfile), journal on a persistent named volume
+#   caddy   — reverse proxy + automatic HTTPS (Let's Encrypt), no cert wrangling
+#   duckdns — keeps a free DuckDNS hostname pointed at the VM's public IP
+#
+# All config comes from .env (see .env.example). Bring it up with: docker compose up -d --build
+
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - DB_PATH=/data/journal.db   # the persistent volume, not the container fs
+    volumes:
+      - journal:/data
+    expose:
+      - "8000"                     # internal only; Caddy is the public face
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"                    # Let's Encrypt HTTP-01 challenge
+      - "443:443"                  # HTTPS
+    environment:
+      - SITE_ADDRESS=${SITE_ADDRESS}   # your DuckDNS hostname, e.g. myhuck.duckdns.org
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data           # persists issued certs across restarts
+      - caddy_config:/config
+    depends_on:
+      - app
+
+  duckdns:
+    image: lscr.io/linuxserver/duckdns:latest
+    restart: unless-stopped
+    environment:
+      - SUBDOMAINS=${DUCKDNS_SUBDOMAIN}   # just the label, e.g. 'myhuck'
+      - TOKEN=${DUCKDNS_TOKEN}
+
+volumes:
+  journal:        # the write-ahead journal / dedupe DB — survives restarts & redeploys
+  caddy_data:
+  caddy_config:
