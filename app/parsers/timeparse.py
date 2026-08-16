@@ -29,11 +29,18 @@ def _apply_meridiem(hour: int, meridiem: str | None) -> int | None:
     return 12 if hour == 12 else hour + 12
 
 
-def resolve(text: str, tz: ZoneInfo, now: datetime | None = None) -> tuple[datetime | None, str]:
-    """Return (resolved datetime or None, text with the time token removed)."""
+def resolve(
+    text: str, tz: ZoneInfo, now: datetime | None = None, allow_now: bool = True
+) -> tuple[datetime | None, str]:
+    """Return (resolved datetime or None, text with the time token removed).
+
+    `allow_now=False` skips the 'now' family, for callers that only want an *explicit*
+    clock time: 'down now' carries no more information than the absence of a time does,
+    and a caller that treats any resolved time as explicit would otherwise stamp one.
+    """
     now = now or datetime.now(tz)
 
-    if match := _NOW.search(text):
+    if allow_now and (match := _NOW.search(text)):
         return now.replace(second=0, microsecond=0), _strip(text, match)
 
     for pattern, has_minutes in ((_HHMM, True), (_HH_MERIDIEM, False)):

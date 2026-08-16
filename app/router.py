@@ -22,6 +22,7 @@ HELP = (
     "Bottles:   11am 90ml breast milk · 90ml formula\n"
     "Nappies:   poo nappy · wet at 2pm · big green poo\n"
     "Sleep:     down now · awake · slept 2pm to 4pm\n"
+    "           sleep start 5:40am · awake at 7:30  (either end can be backdated)\n"
     "Nursing:   feeding now left · finished nursing\n"
     "Pump:      pumped 120ml · expressed 3oz left\n"
     "Growth:    weight 5.2kg · 55cm 5.1kg\n\n"

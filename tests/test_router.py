@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -9,10 +10,12 @@ import pytest
 
 from app.channels.base import InboundMessage
 from app.journal import Journal
+from app.parsers.common import MISSING
 from app.router import Router
 from app.skills.base import Registry, SkillResult
 from app.skills.huckleberry.bottle import BottleSkill
 from app.skills.huckleberry.diaper import DiaperSkill
+from app.skills.huckleberry.sleep import SleepSkill
 
 TZ = ZoneInfo("America/New_York")
 ALICE = "447700900123"
@@ -228,6 +231,62 @@ async def test_journal_records_sender_for_attribution():
     await router.handle(msg("90ml formula", sender=BOB))
     rows = await journal.recent()
     assert rows[0]["sender"] == BOB
+
+
+# ---- sleep: the clarify loop must not lose a known start time ---------------
+
+class FakeSleepSkill(SleepSkill):
+    """Real parsing/clarify from SleepSkill; execute is faked so no network is touched."""
+
+    def __init__(self) -> None:
+        super().__init__(client=None, tz=TZ)
+        self.calls: list[dict[str, Any]] = []
+
+    async def execute(self, args: dict[str, Any]) -> SkillResult:
+        self.calls.append(args)
+        return SkillResult(ok=True, message="Sleep started.", verified=True)
+
+
+def make_sleep():
+    journal = Journal(":memory:")
+    channel = FakeChannel()
+    skill = FakeSleepSkill()
+    registry = Registry()
+    registry.register(skill)
+    router = Router(registry=registry, journal=journal, channel=channel, tz=TZ)
+    return router, channel, skill, journal
+
+
+async def test_backdated_start_never_reaches_the_clarify_loop():
+    router, channel, skill, _ = make_sleep()
+    await router.handle(msg("Sleep start 5:40 am"))
+
+    assert len(skill.calls) == 1
+    args = skill.calls[0]
+    assert args["action"] == "start"
+    assert (args["start_time"].hour, args["start_time"].minute) == (5, 40)
+    assert "end" not in channel.sent[0][1].lower()
+
+
+async def test_still_sleeping_reply_keeps_the_pending_start_time():
+    """Regression: 'She is still sleeping' answering 'when did it end?' opened a fresh
+    timer at the time of the reply and dropped the 5:40 the user had already given."""
+    router, _, skill, journal = make_sleep()
+    started = datetime.now(TZ).replace(hour=5, minute=40, second=0, microsecond=0)
+    await journal.set_pending(
+        ALICE,
+        "huckleberry_sleep",
+        {"action": "log", "start_time": started, "end_time": MISSING},
+        "When did it end? e.g. `4pm`, or say `still asleep`",
+    )
+
+    await router.handle(msg("She is still sleeping"))
+
+    assert len(skill.calls) == 1
+    args = skill.calls[0]
+    assert args["action"] == "start"
+    assert (args["start_time"].hour, args["start_time"].minute) == (5, 40)
+    assert await journal.get_pending(ALICE) is None
 
 
 # ---- diaper ----------------------------------------------------------------
