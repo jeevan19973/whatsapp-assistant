@@ -77,6 +77,106 @@ def test_diaper_both_when_pee_and_poo():
     assert DiaperSkill(None).regex_parse("poo and wee in the nappy", TZ)["mode"] == "both"
 
 
+def test_diaper_amount_synonyms():
+    skill = DiaperSkill(None)
+    assert skill.regex_parse("diaper pee heavy at 6:30pm", TZ)["pee_amount"] == "big"
+    assert skill.regex_parse("light wet nappy", TZ)["pee_amount"] == "little"
+    assert skill.regex_parse("soaked nappy, wet", TZ)["pee_amount"] == "big"
+    assert skill.regex_parse("normal poo", TZ)["poo_amount"] == "medium"
+
+
+def test_diaper_light_colour_is_not_an_amount():
+    args = DiaperSkill(None).regex_parse("light brown poo", TZ)
+    assert args["color"] == "brown"
+    assert args["poo_amount"] is None
+
+
+def test_diaper_amount_survives_the_mode_question():
+    """'5:10 am diaper medium' -> 'pee' must keep the medium (issue 2B)."""
+    skill = DiaperSkill(None)
+    args = skill.regex_parse("5:10 am diaper medium", TZ)
+    assert args["mode"] == MISSING
+    assert args["amount_hint"] == "medium"
+
+    done = skill.complete_pending(args, "Pee", TZ)
+    assert done["mode"] == "pee"
+    assert done["pee_amount"] == "medium"
+    assert skill.missing_question(done) is None
+
+
+def test_diaper_answer_can_carry_its_own_detail():
+    """'pee, big' as the answer supplies the amount the first message lacked (issue 2C)."""
+    skill = DiaperSkill(None)
+    args = skill.regex_parse("changed her nappy", TZ)
+    done = skill.complete_pending(args, "poo, big and green", TZ)
+    assert done["mode"] == "poo"
+    assert done["poo_amount"] == "big"
+    assert done["color"] == "green"
+
+
+def test_diaper_answer_detail_beats_the_original():
+    skill = DiaperSkill(None)
+    args = skill.regex_parse("nappy change, medium", TZ)
+    done = skill.complete_pending(args, "pee, actually heavy", TZ)
+    assert done["pee_amount"] == "big"
+
+
+def test_diaper_mixed_with_one_amount_asks_which():
+    skill = DiaperSkill(None)
+    args = skill.regex_parse("big nappy, poo and wee", TZ)
+    assert args["mode"] == "both"
+    question = skill.missing_question(args)
+    assert question is not None and "pee or the poo" in question
+
+    done = skill.complete_pending(args, "poo", TZ)
+    assert done["poo_amount"] == "big"
+    assert done["pee_amount"] is None
+    assert skill.missing_question(done) is None
+
+
+def test_diaper_mixed_amount_can_apply_to_both():
+    skill = DiaperSkill(None)
+    args = skill.regex_parse("medium poo and wee nappy", TZ)
+    done = skill.complete_pending(args, "both", TZ)
+    assert done["poo_amount"] == done["pee_amount"] == "medium"
+
+
+def test_diaper_mixed_without_amount_asks_nothing():
+    skill = DiaperSkill(None)
+    args = DiaperSkill(None).regex_parse("poo and wee nappy", TZ)
+    assert skill.missing_question(args) is None
+
+
+def test_diaper_mode_question_then_amount_question():
+    """A bare change answered with 'both' chains into the pee-or-poo question."""
+    skill = DiaperSkill(None)
+    args = skill.regex_parse("changed her nappy", TZ)
+    after_mode = skill.complete_pending(args, "both, big", TZ)
+    assert after_mode["mode"] == "both"
+    assert "pee or the poo" in skill.missing_question(after_mode)
+
+    done = skill.complete_pending(after_mode, "pee", TZ)
+    assert done["pee_amount"] == "big"
+    assert done["poo_amount"] is None
+
+
+def test_diaper_llm_normalizes_off_enum_values():
+    """The LLM answering 'heavy' must land on 'big', not be discarded (issue 1C)."""
+    args = DiaperSkill(None).coerce_llm(
+        {"mode": "Poo", "poo_amount": "heavy", "color": "grey", "consistency": "watery"},
+        TZ,
+    )
+    assert args["mode"] == "poo"
+    assert args["poo_amount"] == "big"
+    assert args["color"] == "gray"
+    assert args["consistency"] == "runny"
+
+
+def test_diaper_llm_junk_still_drops():
+    args = DiaperSkill(None).coerce_llm({"mode": "poo", "poo_amount": "sparkly"}, TZ)
+    assert args["poo_amount"] is None
+
+
 # ---- sleep ------------------------------------------------------------------
 
 def test_sleep_timer_start_and_complete():

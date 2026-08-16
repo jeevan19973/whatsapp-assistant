@@ -30,8 +30,10 @@ HELP = (
     "Note: entries can't be deleted from here — use the Huckleberry app for that."
 )
 
-# Display-only keys a skill may attach for its own confirmation copy; never sent to execute.
-_INTERNAL_KEYS = {"time_was_explicit"}
+# Scratch keys a skill may attach for its own confirmation copy or to carry state across a
+# clarifying question; never sent to execute. Names are skill-scoped enough not to collide
+# with a real field (bottle's "amount" stays put).
+_INTERNAL_KEYS = {"time_was_explicit", "source_text", "amount_hint", "amount_target"}
 
 
 class Router:

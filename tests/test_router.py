@@ -12,6 +12,7 @@ from app.journal import Journal
 from app.router import Router
 from app.skills.base import Registry, SkillResult
 from app.skills.huckleberry.bottle import BottleSkill
+from app.skills.huckleberry.diaper import DiaperSkill
 
 TZ = ZoneInfo("America/New_York")
 ALICE = "447700900123"
@@ -227,3 +228,76 @@ async def test_journal_records_sender_for_attribution():
     await router.handle(msg("90ml formula", sender=BOB))
     rows = await journal.recent()
     assert rows[0]["sender"] == BOB
+
+
+# ---- diaper ----------------------------------------------------------------
+
+class FakeDiaperSkill(DiaperSkill):
+    """Real parsing/clarify from DiaperSkill; execute is faked so no network is touched."""
+
+    def __init__(self) -> None:
+        super().__init__(client=None)
+        self.calls: list[dict[str, Any]] = []
+
+    async def execute(self, args: dict[str, Any]) -> SkillResult:
+        self.calls.append(args)
+        return SkillResult(ok=True, message="Nappy logged.", verified=True)
+
+
+def make_diaper():
+    journal = Journal(":memory:")
+    channel = FakeChannel()
+    skill = FakeDiaperSkill()
+    registry = Registry()
+    registry.register(skill)
+    router = Router(registry=registry, journal=journal, channel=channel, tz=TZ)
+    return router, channel, skill, journal
+
+
+async def test_diaper_intensity_synonym_reaches_the_skill():
+    router, _, skill, _ = make_diaper()
+    await router.handle(msg("Diaper pee heavy at 6:30 pm"))
+
+    args = skill.calls[0]
+    assert args["mode"] == "pee"
+    assert args["pee_amount"] == "big"
+    assert (args["start_time"].hour, args["start_time"].minute) == (18, 30)
+
+
+async def test_diaper_amount_survives_the_clarifying_question():
+    """Regression: '5:10 am diaper medium' -> 'Pee' logged the pee and dropped the medium.
+
+    Goes through the real journal, so the scratch keys have to survive the JSON round-trip.
+    """
+    router, channel, skill, journal = make_diaper()
+    await router.handle(msg("5:10 am diaper medium"))
+
+    assert skill.calls == []
+    assert "pee, poo" in channel.sent[0][1]
+
+    await router.handle(msg("Pee", mid="wamid.2"))
+
+    assert len(skill.calls) == 1
+    args = skill.calls[0]
+    assert args["mode"] == "pee"
+    assert args["pee_amount"] == "medium"
+    assert (args["start_time"].hour, args["start_time"].minute) == (5, 10)
+    assert await journal.get_pending(ALICE) is None
+
+
+async def test_diaper_mixed_nappy_asks_which_amount_then_logs():
+    router, channel, skill, journal = make_diaper()
+    await router.handle(msg("big nappy, poo and wee"))
+
+    assert skill.calls == []
+    assert "pee or the poo" in channel.sent[0][1]
+
+    await router.handle(msg("poo", mid="wamid.2"))
+
+    args = skill.calls[0]
+    assert args["mode"] == "both"
+    assert args["poo_amount"] == "big"
+    assert args["pee_amount"] is None
+    assert "amount_hint" not in args and "amount_target" not in args
+    assert "source_text" not in args
+    assert await journal.get_pending(ALICE) is None
