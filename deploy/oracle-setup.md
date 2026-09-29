@@ -99,7 +99,7 @@ rsync -av --progress \
   -e "ssh -i ~/Downloads/<your-private-key-file>" \
   --exclude '.git' --exclude '.venv' --exclude '__pycache__' \
   --exclude '*.db' --exclude '.pytest_cache' \
-  /Users/mjs/Documents/Products/WhatsApp-Assistant/ \
+  <path-to-repo>/ \
   ubuntu@<PUBLIC_IP>:~/whatsapp-assistant/
 ```
 
@@ -205,7 +205,7 @@ rsync -av --progress \
   -e "ssh -i ~/Downloads/<your-private-key-file>" \
   --exclude '.git' --exclude '.venv' --exclude '__pycache__' \
   --exclude '*.db' --exclude '.pytest_cache' \
-  /Users/mjs/Documents/Products/WhatsApp-Assistant/ \
+  <path-to-repo>/ \
   ubuntu@<PUBLIC_IP>:~/whatsapp-assistant/
 
 # 2. SSH in and rebuild:

@@ -44,6 +44,15 @@ class Settings(BaseSettings):
     def allowed(self) -> frozenset[str]:
         return frozenset(n.strip() for n in self.allowed_wa_ids.split(",") if n.strip())
 
+    def missing_security(self) -> list[str]:
+        """Env vars the webhook can't run safely without. Empty list = safe to start."""
+        missing = []
+        if not self.wa_app_secret:
+            missing.append("WA_APP_SECRET")
+        if not self.allowed:
+            missing.append("ALLOWED_WA_IDS")
+        return missing
+
     @cached_property
     def tz(self) -> ZoneInfo:
         return ZoneInfo(self.local_tz)

@@ -40,6 +40,11 @@ state = State()
 async def lifespan(app: FastAPI):
     install_log_filter()
 
+    # Fail closed. Without the app secret anyone can forge a webhook POST; without the
+    # allowlist anyone who finds the number can write to the child's Huckleberry account.
+    if missing := settings.missing_security():
+        raise RuntimeError(f"refusing to start: set {', '.join(missing)} in .env")
+
     state.journal = Journal(settings.db_path)
     state.channel = WhatsAppCloudChannel(
         phone_number_id=settings.wa_phone_number_id,
@@ -81,9 +86,6 @@ async def lifespan(app: FastAPI):
         settings.db_path,
         getattr(state.llm, "name", "none (regex-only)"),
     )
-    if not settings.allowed:
-        log.warning("ALLOWED_WA_IDS is empty — every sender will be accepted!")
-
     yield
 
     await state.channel.close()
@@ -121,7 +123,7 @@ async def receive(request: Request, background: BackgroundTasks) -> Response:
         return Response(status_code=400)
 
     for msg in state.channel.parse(payload):
-        if settings.allowed and msg.sender not in settings.allowed:
+        if msg.sender not in settings.allowed:
             log.warning("rejected: sender %s not in ALLOWED_WA_IDS", msg.sender)
             continue
         background.add_task(_guarded, msg)

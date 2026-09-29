@@ -29,8 +29,8 @@ class WhatsAppCloudChannel:
 
     def verify_signature(self, body: bytes, header: str | None) -> bool:
         if not self._app_secret:
-            log.warning("WA_APP_SECRET not set — signature check DISABLED (dev only)")
-            return True
+            log.error("WA_APP_SECRET not set: rejecting every inbound request")
+            return False
         if not header or not header.startswith("sha256="):
             return False
         expected = hmac.new(self._app_secret.encode(), body, hashlib.sha256).hexdigest()
