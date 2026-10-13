@@ -13,6 +13,7 @@ from app.journal import Journal
 from app.llm.base import build_provider
 from app.router import Router
 from app.skills.base import Registry
+from app.skills.help import HelpSkill
 from app.skills.huckleberry.bottle import BottleSkill
 from app.skills.huckleberry.client import HuckleberryClient, install_log_filter
 from app.skills.huckleberry.diaper import DiaperSkill
@@ -59,8 +60,10 @@ async def lifespan(app: FastAPI):
     )
 
     registry = Registry()
-    # Registration order = regex fast-path priority. Keyword-specific skills first; bottle
+    # Registration order = regex fast-path priority. Help first, so a question about a
+    # tracker isn't answered by logging an entry; then keyword-specific skills; bottle
     # (the volume catch-all) last, so 'pumped 120ml' isn't grabbed as a bottle.
+    registry.register(HelpSkill())
     registry.register(DiaperSkill(state.huckleberry))
     registry.register(SleepSkill(state.huckleberry, settings.tz))
     registry.register(NursingSkill(state.huckleberry, settings.tz))

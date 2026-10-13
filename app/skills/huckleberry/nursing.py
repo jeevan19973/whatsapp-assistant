@@ -167,7 +167,13 @@ class NursingSkill:
             log.exception("start_nursing failed")
             return SkillResult(ok=False, message=f"Couldn't start a nursing timer — {type(exc).__name__}.", error=f"{type(exc).__name__}: {exc}")
         now = common.now_minute(self._tz)
-        return SkillResult(ok=True, message=f"Nursing ({side}) started at {now:%H:%M}. Send `done` when finished.", verified=True)
+        # `nursing done`, not a bare `done`: the parser needs the keyword to tell a finished
+        # feed from a finished nap, and the bot must never suggest a phrasing it can't read.
+        return SkillResult(
+            ok=True,
+            message=f"Nursing ({side}) started at {now:%H:%M}. Send `nursing done` when finished.",
+            verified=True,
+        )
 
     async def _complete(self) -> SkillResult:
         try:
@@ -178,7 +184,7 @@ class NursingSkill:
             log.warning("complete_nursing failed (likely no timer running): %s", exc)
             return SkillResult(
                 ok=True, verified=False,
-                message="Couldn't stop a nursing timer — is one running? Start one with `feeding now`, or log a past feed like `nursed 2 to 2:20`.",
+                message="Couldn't stop a nursing timer, is one running? Start one with `feeding now left`, or log a past feed like `nursed 2 to 2:20`.",
             )
         now = common.now_minute(self._tz)
         return SkillResult(ok=True, message=f"Nursing finished at {now:%H:%M}.", verified=True)

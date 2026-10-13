@@ -14,14 +14,13 @@
   the clarify/pending flow. Live gate closed: real Nemotron inference via `scripts/spike_llm.py`
   extracts amount/units/type/time from freeform messages (times normalized to HH:MM by the
   model, anchored by `timeparse`). Degrades to regex-only when no key is set.
-- 🔶 **Phase 4** — skill host generalized (router is now skill-agnostic; each skill owns its
+- ✅ **Phase 4** — skill host generalized (router is now skill-agnostic; each skill owns its
   regex parse, LLM coercion, missing-field question, and clarify-answer). Five skills added:
   diaper (full detail), pump, sleep (live timer + intervals), nursing (live timer + intervals),
   growth. 89 tests green; live LLM routing verified across all six skills via spike_llm.
   Deploy artifacts built for **Oracle Cloud Always Free** (zero cost, chosen over Fly — see §4):
   Dockerfile (Python 3.14), docker-compose (app + Caddy HTTPS + DuckDNS), deploy/oracle-setup.md.
-  Remaining: provision the VM and run the stack; real-device write verification lands naturally
-  once it's live.
+  Live: the stack runs on the Oracle VM and the Meta webhook points at its DuckDNS hostname.
 
 ## 1. What we're building
 
